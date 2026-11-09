@@ -1,0 +1,51 @@
+name: ci
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: hashicorp/setup-terraform@v3
+        with: { terraform_version: "1.9.5" }
+      - name: fmt
+        run: terraform fmt -recursive -check
+      - name: validate modules
+        run: |
+          for m in modules/*; do
+            echo "::group::validate $m"
+            terraform -chdir=$m init -backend=false
+            terraform -chdir=$m validate
+            echo "::endgroup::"
+          done
+      - name: validate examples
+        run: |
+          terraform -chdir=examples/dev init -backend=false
+          terraform -chdir=examples/dev validate
+
+  tflint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: terraform-linters/setup-tflint@v4
+        with: { tflint_version: v0.52.0 }
+      - run: tflint --init
+      - name: run tflint across modules and examples
+        run: |
+          for d in modules/* examples/dev; do
+            echo "::group::tflint $d"
+            (cd "$d" && tflint --format=compact)
+            echo "::endgroup::"
+          done
+
+  checkov:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: .
+          framework: terraform
+          soft_fail: true
